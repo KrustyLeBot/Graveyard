@@ -11,7 +11,8 @@ The interface is in French.
   the phone generates faster than it reads), delay before the first sound, model load time, and
   the silences heard while waiting for the next sentence. The voice ticked here is the one the
   other tabs read with.
-- **Livre**: import an EPUB (button, or "open with" from a file manager) and listen to a chapter.
+- **Livre**: pick the folder EPUBs are downloaded into (or one file, or "open with" from a file
+  manager); the EPUBs found there are listed, and a chapter of the one opened can be listened to.
   The sentence being read is highlighted; a tap reads from there. Reading goes on with the screen off.
 - **Webtoon**: Poseidon Scans chapters with text recognition (blocks framed on the page, text
   listed on demand), the recognised text read aloud while the page follows the voice, automatic

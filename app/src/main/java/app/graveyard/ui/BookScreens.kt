@@ -28,9 +28,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +51,7 @@ import app.graveyard.Nav
 import app.graveyard.Screen
 import app.graveyard.book.BookChapter
 import app.graveyard.book.BookFile
+import app.graveyard.book.FolderBook
 import app.graveyard.suite.AboutSettings
 import app.graveyard.suite.SettingsHint
 import app.graveyard.suite.SuiteTopBar
@@ -58,7 +61,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** The imported EPUBs, and the button to add one. */
+/** The EPUBs of the folder the user downloads into, and the ones already opened. */
 @Composable
 fun BooksTab(app: GraveyardApp, nav: Nav) {
     var books by remember { mutableStateOf<List<BookFile>>(emptyList()) }
@@ -66,12 +69,16 @@ fun BooksTab(app: GraveyardApp, nav: Nav) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    fun import(uri: Uri) {
+    var folder by remember { mutableStateOf(app.books.folder) }
+    var inFolder by remember { mutableStateOf<List<FolderBook>>(emptyList()) }
+
+    fun import(uri: Uri, open: Boolean = false) {
         busy = true
         error = null
         app.scope.launch {
             try {
-                app.books.import(uri)
+                val book = app.books.import(uri)
+                if (open) nav.open(Screen.Book(book))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -84,7 +91,24 @@ fun BooksTab(app: GraveyardApp, nav: Nav) {
     }
 
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? -> if (uri != null) import(uri) }
-    LaunchedEffect(revision) { books = withContext(Dispatchers.IO) { app.books.list() } }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree: Uri? ->
+        if (tree != null) {
+            app.books.chooseFolder(tree)
+            folder = tree
+            revision++
+        }
+    }
+    LaunchedEffect(revision) {
+        books = withContext(Dispatchers.IO) { app.books.list() }
+        try {
+            inFolder = app.books.folderBooks()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            inFolder = emptyList()
+            error = e.message ?: e.toString()
+        }
+    }
     LaunchedEffect(app.pendingBook) {
         app.pendingBook?.let {
             app.pendingBook = null
@@ -93,12 +117,36 @@ fun BooksTab(app: GraveyardApp, nav: Nav) {
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { pick.launch(arrayOf("application/epub+zip", "application/octet-stream")) }, enabled = !busy) {
-            Text(if (busy) "Import en cours…" else "Importer un EPUB")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { pickFolder.launch(folder) }, enabled = !busy) {
+                Text(if (folder == null) "Choisir le dossier des EPUB" else "Changer de dossier")
+            }
+            OutlinedButton(onClick = { pick.launch(arrayOf("application/epub+zip", "application/octet-stream")) }, enabled = !busy) {
+                Text("Un fichier")
+            }
         }
-        SettingsHint("Un EPUB peut aussi être ouvert avec Graveyard depuis le gestionnaire de fichiers. La lecture utilise la voix cochée dans l'onglet Voix.")
+        SettingsHint(
+            if (busy) "Ouverture du livre…"
+            else "Choisis le dossier où tu télécharges tes EPUB : ils s'affichent ici, du plus récent au plus ancien. La lecture utilise la voix cochée dans l'onglet Voix.",
+        )
         error?.let { SettingsHint(it, MaterialTheme.colorScheme.error) }
         LazyColumn(Modifier.fillMaxSize()) {
+            if (folder != null) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Dans le dossier (${inFolder.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { revision++ }) { Text("Actualiser") }
+                    }
+                }
+                itemsIndexed(inFolder, key = { _, b -> b.uri.toString() }) { _, entry ->
+                    ListItem(
+                        headlineContent = { Text(entry.name) },
+                        modifier = Modifier.clickable(enabled = !busy) { import(entry.uri, open = true) },
+                    )
+                    HorizontalDivider()
+                }
+            }
+            if (books.isNotEmpty()) item { Text("Déjà ouverts", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp)) }
             itemsIndexed(books, key = { _, b -> b.file.path }) { _, book ->
                 ListItem(
                     headlineContent = { Text(book.title) },

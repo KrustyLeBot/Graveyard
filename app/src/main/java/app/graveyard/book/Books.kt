@@ -1,7 +1,9 @@
 package app.graveyard.book
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import app.graveyard.text.Sentences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,6 +13,9 @@ import java.io.IOException
 
 data class BookFile(val file: File, val title: String, val authors: String)
 
+/** An EPUB found in the folder the user chose, not imported yet. */
+data class FolderBook(val name: String, val uri: Uri)
+
 /** A chapter cut into the pieces the voice reads; [index] is its place in the book's reading order. */
 data class BookChapter(val index: Int, val title: String, val pieces: List<String>) {
     val characters: Int get() = pieces.sumOf { it.length }
@@ -19,6 +24,47 @@ data class BookChapter(val index: Int, val title: String, val pieces: List<Strin
 /** The EPUBs imported into the app (`files/books/`), kept private: this is a test bench, not a library. */
 class Books(private val context: Context) {
     private val dir = File(context.filesDir, "books").apply { mkdirs() }
+
+    private val prefs = context.getSharedPreferences("books", Context.MODE_PRIVATE)
+
+    /** The folder the user downloads EPUBs into, picked once with the system folder chooser. */
+    var folder: Uri? = prefs.getString("folder", null)?.let(Uri::parse)
+        private set
+
+    fun chooseFolder(tree: Uri) {
+        // The permission must outlive this launch for the folder to be listed next time.
+        runCatching { context.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        folder = tree
+        prefs.edit().putString("folder", tree.toString()).apply()
+    }
+
+    /** The EPUBs of the chosen folder and of its sub-folders (two levels down), newest first. */
+    suspend fun folderBooks(): List<FolderBook> = withContext(Dispatchers.IO) {
+        val tree = folder ?: return@withContext emptyList()
+        val found = mutableListOf<Pair<Long, FolderBook>>()
+        fun scan(documentId: String, depth: Int) {
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
+            val columns = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            )
+            val folders = mutableListOf<String>()
+            context.contentResolver.query(children, columns, null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0)
+                    val name = c.getString(1).orEmpty()
+                    when {
+                        c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR -> folders += id
+                        name.endsWith(".epub", ignoreCase = true) ->
+                            found += c.getLong(3) to FolderBook(name, DocumentsContract.buildDocumentUriUsingTree(tree, id))
+                    }
+                }
+            } ?: throw IOException("Dossier illisible : choisis-le à nouveau")
+            if (depth < 2) folders.forEach { scan(it, depth + 1) }
+        }
+        scan(DocumentsContract.getTreeDocumentId(tree), 0)
+        found.sortedByDescending { it.first }.map { it.second }
+    }
 
     fun list(): List<BookFile> = dir.listFiles { f -> f.extension.equals("epub", true) }.orEmpty()
         .sortedByDescending { it.lastModified() }
