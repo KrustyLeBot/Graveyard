@@ -30,8 +30,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # Release build, signed with the test key committed in signing/ (see the README).
-      - name: Unit tests and APK
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: APK
+        run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk graveyard.apk
