@@ -1,0 +1,7 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- A tombstone on a mound. -->
+    <path android:fillColor="#FFFFFF" android:pathData="M40,72 L40,48 A14,14 0 0 1 68,48 L68,72 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M32,72 h44 v5 h-44 z" />
+    <path android:fillColor="#B832D0" android:pathData="M52,46 h4 v5 h5 v4 h-5 v10 h-4 v-10 h-5 v-4 h5 z" />
+</vector>

@@ -1,0 +1,46 @@
+# Do not rename this file: GitHub numbers runs per workflow file and the run number is the app's build number.
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Release build, signed with the test key committed in signing/ (see the README).
+      - name: Unit tests and APK
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk graveyard.apk
+
+      - name: Publish rolling release `latest`
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest graveyard.apk \
+            --target "$GITHUB_SHA" \
+            --title "Graveyard build ${{ github.run_number }}" \
+            --notes "Automatic build ${{ github.run_number }} of ${GITHUB_SHA::7}." \
+            --latest
